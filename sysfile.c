@@ -15,6 +15,7 @@
 #include "sleeplock.h"
 #include "file.h"
 #include "fcntl.h"
+#include "namecache.h"
 
 // Fetch the nth word-sized system call argument as a file descriptor
 // and return both the descriptor and the corresponding struct file.
@@ -214,6 +215,9 @@ sys_unlink(void)
     iunlockput(ip);
     goto bad;
   }
+
+  namecache_invalidate(ip->dev, ip->inum);
+  namecache_invalidate(dp->dev, dp->inum);
 
   memset(&de, 0, sizeof(de));
   if(writei(dp, (char*)&de, off, sizeof(de)) != sizeof(de))

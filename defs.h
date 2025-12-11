@@ -53,6 +53,14 @@ int             readi(struct inode*, char*, uint, uint);
 void            stati(struct inode*, struct stat*);
 int             writei(struct inode*, char*, uint, uint);
 
+// namecache.c
+void            namecache_init(void);
+uint            namecache_lookup(uint, uint, char*);
+void            namecache_add(uint, uint, char*, uint);
+void            namecache_invalidate(uint, uint);
+void            namecache_clear(void);
+void            namecache_stats(void);
+
 // ide.c
 void            ideinit(void);
 void            ideintr(void);

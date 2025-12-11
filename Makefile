@@ -12,6 +12,7 @@ OBJS = \
 	log.o\
 	main.o\
 	mp.o\
+	namecache.o\
 	picirq.o\
 	pipe.o\
 	proc.o\
@@ -182,6 +183,7 @@ UPROGS=\
 	_wc\
 	_zombie\
 	_groupcommittest\
+	_namecache_test\
 
 fs.img: mkfs README $(UPROGS)
 	./mkfs fs.img README $(UPROGS)

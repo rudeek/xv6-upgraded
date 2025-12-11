@@ -19,6 +19,7 @@
 #include "sleeplock.h"
 #include "fs.h"
 #include "buf.h"
+#include "namecache.h"
 #include "file.h"
 
 #define min(a, b) ((a) < (b) ? (a) : (b))
@@ -530,6 +531,14 @@ dirlookup(struct inode *dp, char *name, uint *poff)
   if(dp->type != T_DIR)
     panic("dirlookup not DIR");
 
+  // Проверяем кэш
+  inum = namecache_lookup(dp->dev, dp->inum, name);
+  if(inum != 0) {
+    if(poff)
+      *poff = 0;
+    return iget(dp->dev, inum);
+  }
+
   for(off = 0; off < dp->size; off += sizeof(de)){
     if(readi(dp, (char*)&de, off, sizeof(de)) != sizeof(de))
       panic("dirlookup read");
@@ -540,6 +549,9 @@ dirlookup(struct inode *dp, char *name, uint *poff)
       if(poff)
         *poff = off;
       inum = de.inum;
+
+      namecache_add(dp->dev, dp->inum, name, inum);
+
       return iget(dp->dev, inum);
     }
   }
@@ -573,6 +585,8 @@ dirlink(struct inode *dp, char *name, uint inum)
   de.inum = inum;
   if(writei(dp, (char*)&de, off, sizeof(de)) != sizeof(de))
     panic("dirlink");
+
+  namecache_add(dp->dev, dp->inum, name, inum);
 
   return 0;
 }
