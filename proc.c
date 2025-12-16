@@ -141,6 +141,9 @@ userinit(void)
 
   safestrcpy(p->name, "initcode", sizeof(p->name));
   p->cwd = namei("/");
+  
+  p->uid = 0;    // Первый процесс = root
+  p->gid = 0;
 
   // this assignment to p->state lets other cores
   // run this process. the acquire forces the above
@@ -211,6 +214,9 @@ fork(void)
   safestrcpy(np->name, curproc->name, sizeof(curproc->name));
 
   pid = np->pid;
+
+  np->uid = curproc->uid;  // Наследуем UID от родителя
+  np->gid = curproc->gid;  // Наследуем GID от родителя
 
   acquire(&ptable.lock);
 

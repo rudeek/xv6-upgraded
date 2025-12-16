@@ -194,5 +194,13 @@ void            switchkvm(void);
 int             copyout(pde_t*, uint, void*, uint);
 void            clearpteu(pde_t *pgdir, char *uva);
 
+// users.c
+void            users_init(void);
+int             users_checkpassword(char*, char*);
+void            users_getname(int, char*, int);
+int             users_add(char*, char*, int, int);
+int             users_delete(char*);
+void            users_list(void);
+
 // number of elements in fixed-size array
 #define NELEM(x) (sizeof(x)/sizeof((x)[0]))

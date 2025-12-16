@@ -30,6 +30,9 @@ main(void)
   pinit();         // process table
   tvinit();        // trap vectors
   binit();         // buffer cache
+  
+  users_init(); 
+
   fileinit();      // file table
   ideinit();       // disk 
   namecache_init();// namecache 
