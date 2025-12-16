@@ -6,34 +6,31 @@
 #include "fs.h"
 #include "buf.h"
 
-// Простое логирование, позволяющее одновременные системные вызовы ФС.
+// Simple logging that allows concurrent FS system calls.
 //
-// Лог-транзакция содержит обновления от нескольких системных вызовов ФС.
-// Система логирования делает commit только когда нет активных системных
-// вызовов ФС. Таким образом никогда не требуется рассуждать о том, может ли
-// commit записать незафиксированные обновления системного вызова на диск.
+// A log transaction contains the updates of multiple FS system
+// calls. The logging system only commits when there are
+// no FS system calls active. Thus there is never
+// any reasoning required about whether a commit might
+// write an uncommitted system call's updates to disk.
 //
-// Системный вызов должен вызывать begin_op()/end_op() чтобы отметить
-// свои начало и конец. Обычно begin_op() просто увеличивает счётчик
-// выполняющихся системных вызовов ФС и возвращается.
-// Но если он думает что лог близок к переполнению, он засыпает
-// до тех пор пока последний завершающийся end_op() не сделает commit.
+// A system call should call begin_op()/end_op() to mark
+// its start and end. Usually begin_op() just increments
+// the count of in-progress FS system calls and returns.
+// But if it thinks the log is close to running out, it
+// sleeps until the last outstanding end_op() commits.
 //
-// Лог - это физический re-do лог, содержащий блоки диска.
-// Формат лога на диске:
-//   заголовок блока, содержащий номера блоков для блока A, B, C, ...
-//   блок A
-//   блок B
-//   блок C
+// The log is a physical re-do log containing disk blocks.
+// The on-disk log format:
+//   header block, containing block #s for block A, B, C, ...
+//   block A
+//   block B
+//   block C
 //   ...
-// Добавления в лог синхронные.
+// Log appends are synchronous.
 
-// Параметры для group commit
-#define BATCH_THRESHOLD 3      // Минимум операций для группового commit
-#define COMMIT_DELAY_TICKS 2   // Максимальная задержка в тиках таймера
-
-// Содержимое блока заголовка, используется как для заголовка на диске
-// так и для отслеживания в памяти номеров залогированных блоков до commit.
+// Contents of the header block, used for both the on-disk header block
+// and to keep track in memory of logged block# before commit.
 struct logheader {
   int n;
   int block[LOGSIZE];
@@ -43,15 +40,10 @@ struct log {
   struct spinlock lock;
   int start;
   int size;
-  int outstanding;      // сколько системных вызовов ФС выполняется
-  int committing;       // в процессе commit(), пожалуйста подождите
+  int outstanding; // how many FS sys calls are executing.
+  int committing;  // in commit(), please wait.
   int dev;
   struct logheader lh;
-  
-  // === НОВЫЕ ПОЛЯ ДЛЯ GROUP COMMIT ===
-  int pending_writes;   // количество ожидающих записей
-  int last_commit_tick; // последний тик когда был сделан commit
-  int force_commit;     // флаг принудительного commit
 };
 struct log log;
 
@@ -70,32 +62,26 @@ initlog(int dev)
   log.start = sb.logstart;
   log.size = sb.nlog;
   log.dev = dev;
-  
-  // Инициализация полей для group commit
-  log.pending_writes = 0;
-  log.last_commit_tick = 0;
-  log.force_commit = 0;
-  
   recover_from_log();
 }
 
-// Копирует зафиксированные блоки из лога в их домашнее расположение
+// Copy committed blocks from log to their home location
 static void
 install_trans(void)
 {
   int tail;
 
   for (tail = 0; tail < log.lh.n; tail++) {
-    struct buf *lbuf = bread(log.dev, log.start+tail+1); // читаем блок лога
-    struct buf *dbuf = bread(log.dev, log.lh.block[tail]); // читаем destination
-    memmove(dbuf->data, lbuf->data, BSIZE);  // копируем блок в dst
-    bwrite(dbuf);  // пишем dst на диск
+    struct buf *lbuf = bread(log.dev, log.start+tail+1); // read log block
+    struct buf *dbuf = bread(log.dev, log.lh.block[tail]); // read dst
+    memmove(dbuf->data, lbuf->data, BSIZE);  // copy block to dst
+    bwrite(dbuf);  // write dst to disk
     brelse(lbuf);
     brelse(dbuf);
   }
 }
 
-// Читает заголовок лога с диска в in-memory заголовок лога
+// Read the log header from disk into the in-memory log header
 static void
 read_head(void)
 {
@@ -109,8 +95,9 @@ read_head(void)
   brelse(buf);
 }
 
-// Пишет in-memory заголовок лога на диск.
-// Это настоящая точка в которой текущая транзакция фиксируется.
+// Write in-memory log header to disk.
+// This is the true point at which the
+// current transaction commits.
 static void
 write_head(void)
 {
@@ -129,84 +116,32 @@ static void
 recover_from_log(void)
 {
   read_head();
-  install_trans(); // если зафиксировано, копируем из лога на диск
+  install_trans(); // if committed, copy from log to disk
   log.lh.n = 0;
-  write_head(); // очищаем лог
+  write_head(); // clear the log
 }
 
-// === НОВАЯ ФУНКЦИЯ: Проверка необходимости группового commit ===
-// Возвращает 1 если нужно делать commit сейчас
-static int
-should_commit(void)
-{
-  int current_tick;
-  
-  // Если установлен флаг принудительного commit
-  if(log.force_commit) {
-    return 1;
-  }
-  
-  // Если накопилось достаточно операций для группового commit
-  if(log.pending_writes >= BATCH_THRESHOLD) {
-    return 1;
-  }
-  
-  // Если прошло слишком много времени с последнего commit
-  // (проверяем через глобальный счётчик тиков)
-  extern uint ticks;
-  extern struct spinlock tickslock;
-  
-  acquire(&tickslock);
-  current_tick = ticks;
-  release(&tickslock);
-  
-  if(current_tick - log.last_commit_tick >= COMMIT_DELAY_TICKS && 
-     log.pending_writes > 0) {
-    return 1;
-  }
-  
-  // Если лог почти заполнен - обязательно делаем commit
-  if(log.lh.n + MAXOPBLOCKS > LOGSIZE - BATCH_THRESHOLD) {
-    return 1;
-  }
-  
-  return 0;
-}
-
-// вызывается в начале каждого системного вызова ФС
+// called at the start of each FS system call.
 void
 begin_op(void)
 {
   acquire(&log.lock);
   while(1){
     if(log.committing){
-      // Если идёт commit, ждём его завершения
       sleep(&log, &log.lock);
     } else if(log.lh.n + (log.outstanding+1)*MAXOPBLOCKS > LOGSIZE){
-      // эта операция может исчерпать место в логе; ждём commit
+      // this op might exhaust log space; wait for commit.
       sleep(&log, &log.lock);
     } else {
-      // Можем начинать операцию
       log.outstanding += 1;
-      log.pending_writes += 1;  // увеличиваем счётчик ожидающих записей
       release(&log.lock);
       break;
     }
   }
 }
 
-// === НОВАЯ ФУНКЦИЯ: Принудительный commit ===
-// Используется когда нужно гарантировать что данные на диске
-void
-force_commit(void)
-{
-  acquire(&log.lock);
-  log.force_commit = 1;
-  release(&log.lock);
-}
-
-// вызывается в конце каждого системного вызова ФС
-// делает commit если это была последняя незавершённая операция
+// called at the end of each FS system call.
+// commits if this was the last outstanding operation.
 void
 end_op(void)
 {
@@ -214,59 +149,41 @@ end_op(void)
 
   acquire(&log.lock);
   log.outstanding -= 1;
-  
   if(log.committing)
     panic("log.committing");
-  
-  // === ИЗМЕНЕНО: Используем новую логику group commit ===
-  // Проверяем нужно ли делать commit сейчас
   if(log.outstanding == 0){
-    // Нет активных операций - проверяем условия для group commit
-    if(should_commit()) {
-      do_commit = 1;
-      log.committing = 1;
-      log.pending_writes = 0;  // сбрасываем счётчик
-      log.force_commit = 0;    // сбрасываем флаг
-    }
+    do_commit = 1;
+    log.committing = 1;
   } else {
-    // Есть активные операции - будим ожидающие begin_op(),
-    // так как уменьшение log.outstanding освободило место
+    // begin_op() may be waiting for log space,
+    // and decrementing log.outstanding has decreased
+    // the amount of reserved space.
     wakeup(&log);
   }
-  
   release(&log.lock);
 
   if(do_commit){
-    // вызываем commit без удержания блокировок, так как нельзя
-    // засыпать с блокировками
+    // call commit w/o holding locks, since not allowed
+    // to sleep with locks.
     commit();
-    
     acquire(&log.lock);
     log.committing = 0;
-    
-    // Обновляем время последнего commit
-    extern uint ticks;
-    extern struct spinlock tickslock;
-    acquire(&tickslock);
-    log.last_commit_tick = ticks;
-    release(&tickslock);
-    
     wakeup(&log);
     release(&log.lock);
   }
 }
 
-// Копирует изменённые блоки из кэша в лог
+// Copy modified blocks from cache to log.
 static void
 write_log(void)
 {
   int tail;
 
   for (tail = 0; tail < log.lh.n; tail++) {
-    struct buf *to = bread(log.dev, log.start+tail+1); // блок лога
-    struct buf *from = bread(log.dev, log.lh.block[tail]); // блок кэша
+    struct buf *to = bread(log.dev, log.start+tail+1); // log block
+    struct buf *from = bread(log.dev, log.lh.block[tail]); // cache block
     memmove(to->data, from->data, BSIZE);
-    bwrite(to);  // пишем лог
+    bwrite(to);  // write the log
     brelse(from);
     brelse(to);
   }
@@ -276,19 +193,19 @@ static void
 commit()
 {
   if (log.lh.n > 0) {
-    write_log();     // Пишем изменённые блоки из кэша в лог
-    write_head();    // Пишем заголовок на диск -- настоящий commit
-    install_trans(); // Теперь устанавливаем записи в домашние расположения
+    write_log();     // Write modified blocks from cache to log
+    write_head();    // Write header to disk -- the real commit
+    install_trans(); // Now install writes to home locations
     log.lh.n = 0;
-    write_head();    // Стираем транзакцию из лога
+    write_head();    // Erase the transaction from the log
   }
 }
 
-// Вызывающий изменил b->data и закончил с буфером.
-// Записывает номер блока и закрепляет в кэше флагом B_DIRTY.
-// commit()/write_log() сделает запись на диск.
+// Caller has modified b->data and is done with the buffer.
+// Record the block number and pin in the cache with B_DIRTY.
+// commit()/write_log() will do the disk write.
 //
-// log_write() заменяет bwrite(); типичное использование:
+// log_write() replaces bwrite(); a typical use is:
 //   bp = bread(...)
 //   modify bp->data[]
 //   log_write(bp)
@@ -305,12 +222,14 @@ log_write(struct buf *b)
 
   acquire(&log.lock);
   for (i = 0; i < log.lh.n; i++) {
-    if (log.lh.block[i] == b->blockno)   // абсорбция лога
+    if (log.lh.block[i] == b->blockno)   // log absorbtion
       break;
   }
   log.lh.block[i] = b->blockno;
   if (i == log.lh.n)
     log.lh.n++;
-  b->flags |= B_DIRTY; // предотвращаем вытеснение
+  b->flags |= B_DIRTY; // prevent eviction
   release(&log.lock);
 }
+
+

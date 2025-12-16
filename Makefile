@@ -182,7 +182,6 @@ UPROGS=\
 	_usertests\
 	_wc\
 	_zombie\
-	_groupcommittest\
 	_namecache_test\
 
 fs.img: mkfs README $(UPROGS)
