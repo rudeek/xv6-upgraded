@@ -140,6 +140,8 @@ sys_login(void)
 
   // Меняем UID текущего процесса
   myproc()->uid = uid;
+  myproc()->gid = uid;
+  
   return 0;
 }
 

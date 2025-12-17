@@ -28,6 +28,8 @@ int getgid(void);
 int setuid(int);
 int login(char*, char*);
 int whoami(char*, int);
+int chmod(char*, int);
+int chown(char*, int);
 
 // ulib.c
 int stat(const char*, struct stat*);

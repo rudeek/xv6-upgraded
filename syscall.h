@@ -25,3 +25,5 @@
 #define SYS_setuid 24
 #define SYS_login  25
 #define SYS_whoami 26
+#define SYS_chmod  27
+#define SYS_chown  28

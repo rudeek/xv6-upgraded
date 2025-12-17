@@ -205,6 +205,18 @@ ialloc(uint dev, short type)
     if(dip->type == 0){  // a free inode
       memset(dip, 0, sizeof(*dip));
       dip->type = type;
+
+      // Получаем текущий процесс для установки владельца
+      struct proc *curproc = myproc();
+      dip->uid = curproc->uid;
+      dip->gid = curproc->gid;
+      
+      // Устанавливаем права по умолчанию
+      if(type == T_DIR)
+        dip->mode = 0755;  // rwxr-xr-x для директорий
+      else
+        dip->mode = 0644;  // rw-r--r-- для файлов
+
       log_write(bp);   // mark it allocated on the disk
       brelse(bp);
       return iget(dev, inum);
@@ -231,6 +243,11 @@ iupdate(struct inode *ip)
   dip->minor = ip->minor;
   dip->nlink = ip->nlink;
   dip->size = ip->size;
+
+  dip->uid = ip->uid;
+  dip->gid = ip->gid;
+  dip->mode = ip->mode;
+
   memmove(dip->addrs, ip->addrs, sizeof(ip->addrs));
   log_write(bp);
   brelse(bp);
@@ -304,6 +321,11 @@ ilock(struct inode *ip)
     ip->minor = dip->minor;
     ip->nlink = dip->nlink;
     ip->size = dip->size;
+
+    ip->uid = dip->uid;
+    ip->gid = dip->gid;
+    ip->mode = dip->mode;
+
     memmove(ip->addrs, dip->addrs, sizeof(ip->addrs));
     brelse(bp);
     ip->valid = 1;
@@ -445,6 +467,10 @@ stati(struct inode *ip, struct stat *st)
   st->type = ip->type;
   st->nlink = ip->nlink;
   st->size = ip->size;
+
+  st->uid = ip->uid;
+  st->gid = ip->gid;
+  st->mode = ip->mode;
 }
 
 //PAGEBREAK!

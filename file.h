@@ -22,6 +22,12 @@ struct inode {
   short minor;
   short nlink;
   uint size;
+
+  //новые поля
+  ushort uid;
+  ushort gid;
+  ushort mode;
+
   uint addrs[NDIRECT+1];
 };
 

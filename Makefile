@@ -187,6 +187,9 @@ UPROGS=\
 	_whoami\
 	_su\
 	_id\
+        _chmod\
+        _chown\
+	_ls_perm\
 
 fs.img: mkfs README $(UPROGS)
 	./mkfs fs.img README $(UPROGS)

@@ -16,6 +16,7 @@
 #include "file.h"
 #include "fcntl.h"
 #include "namecache.h"
+#include "perm.h"
 
 // Fetch the nth word-sized system call argument as a file descriptor
 // and return both the descriptor and the corresponding struct file.
@@ -293,6 +294,7 @@ sys_open(void)
   int fd, omode;
   struct file *f;
   struct inode *ip;
+  struct proc *curproc = myproc();
 
   if(argstr(0, &path) < 0 || argint(1, &omode) < 0)
     return -1;
@@ -316,7 +318,34 @@ sys_open(void)
       end_op();
       return -1;
     }
-  }
+  
+  // Проверяем права на чтение
+    if(omode == O_RDONLY || omode == O_RDWR) {
+      if(curproc->uid != 0 && curproc->uid != ip->uid) {
+        // Не владелец и не root
+        if(!(ip->mode & S_IROTH)) {
+          // Нет прав на чтение для других
+          iunlockput(ip);
+          end_op();
+          return -1;  // Permission denied
+        }
+      }
+    }
+    
+    // Проверяем права на запись
+    if(omode == O_WRONLY || omode == O_RDWR) {
+      if(curproc->uid != 0 && curproc->uid != ip->uid) {
+        // Не владелец и не root
+        if(!(ip->mode & S_IWOTH)) {
+          // Нет прав на запись для других
+          iunlockput(ip);
+          end_op();
+          return -1;  // Permission denied
+        }
+      }
+    } 
+
+ }
 
   if((f = filealloc()) == 0 || (fd = fdalloc(f)) < 0){
     if(f)
@@ -444,5 +473,76 @@ sys_pipe(void)
   }
   fd[0] = fd0;
   fd[1] = fd1;
+  return 0;
+}
+
+// Системный вызов: изменить права доступа
+int
+sys_chmod(void)
+{
+  char *path;
+  int mode;
+  struct inode *ip;
+  struct proc *curproc = myproc();
+
+  if(argstr(0, &path) < 0 || argint(1, &mode) < 0)
+    return -1;
+
+  begin_op();
+  
+  if((ip = namei(path)) == 0){
+    end_op();
+    return -1;
+  }
+
+  ilock(ip);
+  
+  // Только владелец или root могут менять права
+  if(curproc->uid != 0 && curproc->uid != ip->uid) {
+    iunlockput(ip);
+    end_op();
+    return -1;  // Permission denied
+  }
+  
+  ip->mode = mode & 0777;  // Только биты прав
+  iupdate(ip);
+  
+  iunlockput(ip);
+  end_op();
+  
+  return 0;
+}
+
+// Системный вызов: изменить владельца файла
+int
+sys_chown(void)
+{
+  char *path;
+  int uid;
+  struct inode *ip;
+  struct proc *curproc = myproc();
+
+  if(argstr(0, &path) < 0 || argint(1, &uid) < 0)
+    return -1;
+
+  // Только root может менять владельца
+  if(curproc->uid != 0)
+    return -1;
+
+  begin_op();
+  
+  if((ip = namei(path)) == 0){
+    end_op();
+    return -1;
+  }
+
+  ilock(ip);
+  
+  ip->uid = uid;
+  iupdate(ip);
+  
+  iunlockput(ip);
+  end_op();
+  
   return 0;
 }
