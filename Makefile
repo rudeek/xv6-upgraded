@@ -190,6 +190,7 @@ UPROGS=\
         _chmod\
         _chown\
 	_ls_perm\
+	_blocktest\
 
 fs.img: mkfs README $(UPROGS)
 	./mkfs fs.img README $(UPROGS)
