@@ -192,6 +192,7 @@ UPROGS=\
 	_ls_perm\
         _sudo\
         _visudo\
+	_blocktest\
 
 fs.img: mkfs README $(UPROGS)
 	./mkfs fs.img README $(UPROGS)

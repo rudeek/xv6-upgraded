@@ -82,7 +82,7 @@ idestart(struct buf *b)
   int read_cmd = (sector_per_block == 1) ? IDE_CMD_READ :  IDE_CMD_RDMUL;
   int write_cmd = (sector_per_block == 1) ? IDE_CMD_WRITE : IDE_CMD_WRMUL;
 
-  if (sector_per_block > 7) panic("idestart");
+  if (sector_per_block > 255) panic("idestart");
 
   idewait(0);
   outb(0x3f6, 0);  // generate interrupt
