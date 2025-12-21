@@ -46,6 +46,8 @@ users_init(void)
   for(i = 2; i < NUSER; i++) {
     usertable.users[i].active = 0;
   }
+
+  sudoers_init(); //инициализируем список sudoers
 }
 
 // Проверка пароля и получение UID
@@ -171,4 +173,92 @@ users_list(void)
   }
   
   release(&usertable.lock);
+}
+
+// Список пользователей которые могут использовать sudo
+int sudoers[NUSER];
+
+// Инициализация sudoers
+void
+sudoers_init(void)
+{
+  int i;
+  
+  // По умолчанию никто не может использовать sudo
+  for(i = 0; i < NUSER; i++) {
+    sudoers[i] = 0;
+  }
+  
+  // root всегда может (хотя ему и не нужно)
+  sudoers[0] = 1;
+  
+  // Даём права sudo обычному пользователю user (uid=1000)
+  sudoers[1] = 1;  // user может использовать sudo
+}
+
+// Проверка: может ли пользователь использовать sudo?
+int
+users_can_sudo(int uid)
+{
+  int i;
+  
+  acquire(&usertable.lock);
+  
+  for(i = 0; i < NUSER; i++) {
+    if(usertable.users[i].active && 
+       usertable.users[i].uid == uid) {
+      int result = sudoers[i];
+      release(&usertable.lock);
+      return result;
+    }
+  }
+  
+  release(&usertable.lock);
+  return 0;  // Не найден = не может
+}
+
+// Добавить пользователя в sudoers (только root!)
+int
+users_add_sudoer(int uid)
+{
+  int i;
+  
+  acquire(&usertable.lock);
+  
+  for(i = 0; i < NUSER; i++) {
+    if(usertable.users[i].active && 
+       usertable.users[i].uid == uid) {
+      sudoers[i] = 1;
+      release(&usertable.lock);
+      return 0;
+    }
+  }
+  
+  release(&usertable.lock);
+  return -1;
+}
+
+// Удалить пользователя из sudoers (только root!)
+int
+users_remove_sudoer(int uid)
+{
+  int i;
+  
+  // Нельзя удалить root!
+  if(uid == 0)
+    return -1;
+  
+  acquire(&usertable.lock);
+  
+  for(i = 0; i < NUSER; i++) {
+    if(usertable.users[i].active && 
+       usertable.users[i].uid == uid) {
+      sudoers[i] = 0;
+      release(&usertable.lock);
+      return 0;
+    }
+  }
+  
+  release(&usertable.lock);
+  return -1;
 }

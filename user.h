@@ -30,6 +30,10 @@ int login(char*, char*);
 int whoami(char*, int);
 int chmod(char*, int);
 int chown(char*, int);
+int cansudo(void);
+int addsudoer(int);
+int removesudoer(int);
+int setsuid(int);
 
 // ulib.c
 int stat(const char*, struct stat*);

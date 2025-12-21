@@ -190,6 +190,8 @@ UPROGS=\
         _chmod\
         _chown\
 	_ls_perm\
+        _sudo\
+        _visudo\
 
 fs.img: mkfs README $(UPROGS)
 	./mkfs fs.img README $(UPROGS)

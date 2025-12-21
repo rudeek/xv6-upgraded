@@ -27,3 +27,7 @@
 #define SYS_whoami 26
 #define SYS_chmod  27
 #define SYS_chown  28
+#define SYS_cansudo 29
+#define SYS_addsudoer     30
+#define SYS_removesudoer  31
+#define SYS_setsuid       32

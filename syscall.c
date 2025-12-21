@@ -112,6 +112,10 @@ extern int sys_whoami(void);
 
 extern int sys_chmod(void);
 extern int sys_chown(void);
+extern int sys_cansudo(void);
+extern int sys_addsudoer(void);
+extern int sys_removesudoer(void);
+extern int sys_setsuid(void);
 
 static int (*syscalls[])(void) = {
 [SYS_fork]    sys_fork,
@@ -142,6 +146,10 @@ static int (*syscalls[])(void) = {
 [SYS_whoami]  sys_whoami,
 [SYS_chmod]   sys_chmod,
 [SYS_chown]   sys_chown,
+[SYS_cansudo] sys_cansudo,
+[SYS_addsudoer]     sys_addsudoer,
+[SYS_removesudoer]  sys_removesudoer,
+[SYS_setsuid]       sys_setsuid,
 };
 
 void

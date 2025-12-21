@@ -161,3 +161,66 @@ sys_whoami(void)
   users_getname(myproc()->uid, buf, size);
   return 0;
 }
+
+// Системный вызов: может ли пользователь использовать sudo?
+int
+sys_cansudo(void)
+{
+  return users_can_sudo(myproc()->uid);
+}
+
+// Системный вызов: добавить пользователя в sudoers
+int
+sys_addsudoer(void)
+{
+  int uid;
+  struct proc *curproc = myproc();
+  
+  // Только root может изменять sudoers
+  if(curproc->uid != 0)
+    return -1;
+  
+  if(argint(0, &uid) < 0)
+    return -1;
+  
+  return users_add_sudoer(uid);
+}
+
+// Системный вызов: удалить пользователя из sudoers
+int
+sys_removesudoer(void)
+{
+  int uid;
+  struct proc *curproc = myproc();
+  
+  // Только root может изменять sudoers
+  if(curproc->uid != 0)
+    return -1;
+  
+  if(argint(0, &uid) < 0)
+    return -1;
+  
+  return users_remove_sudoer(uid);
+} 
+
+// Системный вызов: sudo - временно стать root для выполнения команды
+int
+sys_setsuid(void)
+{
+  int uid;
+  struct proc *curproc = myproc();
+  
+  if(argint(0, &uid) < 0)
+    return -1;
+  
+  // Только пользователи из sudoers могут использовать setsuid
+  if(!users_can_sudo(curproc->uid))
+    return -1;
+  
+  // Разрешаем только переход в root (0) или обратно
+  if(uid != 0 && uid != curproc->uid)
+    return -1;
+  
+  curproc->uid = uid;
+  return 0;
+}

@@ -201,6 +201,10 @@ void            users_getname(int, char*, int);
 int             users_add(char*, char*, int, int);
 int             users_delete(char*);
 void            users_list(void);
+void            sudoers_init(void);
+int             users_can_sudo(int);
+int             users_add_sudoer(int);
+int             users_remove_sudoer(int);
 
 // number of elements in fixed-size array
 #define NELEM(x) (sizeof(x)/sizeof((x)[0]))
